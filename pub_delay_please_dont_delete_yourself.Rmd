@@ -1,0 +1,133 @@
+---
+title: "pud_delay_trial"
+author: "Dianovics Dominik"
+date: "2023-11-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(jsonlite)
+```
+
+
+```{r data import}
+
+json <- fromJSON("pubmed_medline_articles.json")
+
+
+```
+
+```{r}
+
+json$year <- sub(".*(\\d{4}).*", "\\1", json$pubdate)
+
+```
+
+```{r}
+
+json$received <- as.Date(json$history$received, format = "%Y-%m-%d")
+
+json$revised <- as.Date(json$history$revised, format = "%Y-%m-%d")
+
+json$accepted <- as.Date(json$history$accepted, format = "%Y-%m-%d")
+
+json$pubmed <- as.Date(json$history$pubmed, format = "%Y-%m-%d")
+
+
+```
+
+```{r}
+
+pub_types <- json %>%
+  group_by(publication_types) %>%
+  summarize(counts = n()) %>%
+  mutate(proportion = counts / sum(counts))
+
+
+```
+
+```{r}
+filters <- c("D003160:Comparative Study", "D016428:Journal Article", "D002363:Case Reports", "D017418:Meta-Analysis")
+
+filtered_publication_type <- str_detect(json$publication_types, paste(filters, collapse = "|"))
+
+filtered_json <- json[filtered_publication_type, ]
+
+print(filtered_json)
+
+```
+
+```{r}
+
+json$acceptance_delay <- json$accepted - json$received
+
+json$publication_delay <- json$pubmed - json$accepted
+
+filtered_json$acceptance_delay <- filtered_json$accepted - filtered_json$received
+
+filtered_json$publication_delay <- filtered_json$pubmed - filtered_json$accepted
+
+
+```
+
+```{r}
+
+filtered_json$issn <- gsub("-", "", filtered_json$issn_linking)
+
+jr2022$issn = jr2022$Issn
+
+
+jr2022 <- jr2022[, !(names(jr2022) %in% c("Issn"))]
+
+
+```
+
+```{r}
+filtered_json$issn <- trimws(filtered_json$issn)
+jr2022$issn <- trimws(jr2022$issn)
+
+
+merged_delay <- merge(filtered_json, jr2022, by.y = "issn", all.x = TRUE)
+
+merged_delay |> 
+  filter(is.na(SJR)) |> 
+  group_by(issn) |> 
+  count(issn, sort = TRUE)
+
+
+missing <- merged_delay |> 
+  filter(is.na(SJR)) |> 
+  group_by(issn) |> 
+  count(issn)
+
+not_missing <- merged_delay |> 
+  filter(!is.na(SJR))
+```
+
+```{r}
+everything_filtered <- not_missing |> 
+  filter(publication_delay > 0 | acceptance_delay > 0)
+```
+
+```{r}
+covid_pattern <- c("COVID", "covid", "Covid")
+
+covid_articles <- str_detect(everything_filtered$title, paste(covid_pattern, collapse = "|")) |
+          str_detect(everything_filtered$keywords, paste(covid_pattern, collapse = "|"))
+
+covid_articles_df <- everything_filtered[covid_articles, ]
+
+```
+
+```{r}
+mean_data <- everything_filtered |> 
+  group_by(year) |> 
+  summarize(mean_value = mean(publication_delay, na.rm = TRUE))
+
+
+ggplot(mean_data,
+       aes(x = year, y = mean_value)) +
+       geom_col()
+
+```

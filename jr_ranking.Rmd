@@ -1,0 +1,17 @@
+---
+title: "journal_ranking"
+author: "Dianovics Dominik"
+date: "2023-11-14"
+output: html_document
+---
+```{r}
+library(tidyverse)
+
+jr2022 <- read.csv("scimagojr 2022.csv")
+
+```
+
+```{r}
+rm(jr2016, jr2017, jr2018, jr2019, jr2020, jr2021, jr_full, combined_jr_data, df)
+```
+
