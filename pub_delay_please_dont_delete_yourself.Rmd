@@ -136,8 +136,14 @@ not_missing <- merged_delay |>
 everything_filtered <- not_missing |> 
   filter(publication_delay > 1 & acceptance_delay > 1)
 
-everything_filtered$pubdate <- as.Date(everything_filtered$pubdate, format = "%Y-%m-%d")
+
+
 ```
+
+```{r}
+#Article date needed
+```
+
 
 ```{r Covid pattern}
 covid_pattern <- c("COVID", "covid", "Covid", "COVID-19", "coronavirus", "SARS", "2019-nCoV")
@@ -330,8 +336,9 @@ everything_filtered <- everything_filtered %>%
       Areas_5.x %in% c("Social Sciences", "Arts and Humanities", "Business, Management and Accounting", "Decision Sciences", "Economics, Econometrics and Finance", "Psychology") ~ "Social Sciences",
       Areas_5.x %in% c("Mathematics", "Computer Science") ~ "Mathematics and Computational Sciences",
       TRUE ~ "Other"
-     )
-  )
+     ) 
+  ) |> 
+  select(-Areas_1.x, -Areas_2.x, -Areas_3.x, -Areas_4.x, -Areas_5.x)
    
 
 ```
