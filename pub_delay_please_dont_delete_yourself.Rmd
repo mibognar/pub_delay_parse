@@ -8,14 +8,35 @@ output: html_document
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(jsonlite)
+library(future.apply)
+library(progress)
 ```
-
 
 ```{r data import}
 
-json <- fromJSON("pubmed_medline_articles.json")
+data_link <- "pubmed_medline_articles_partial.json"
 
+jr_link <- "scimagojr 2022.csv"
 
+jr2022 <- read.csv(jr_link)
+
+```
+
+```{r data import_timed}
+track_execution_time <- function(chunk_name) {
+  start_time <- Sys.time()
+  
+  
+  end_time <- Sys.time()
+  
+  elapsed_time <- end_time - start_time
+  cat(paste("Chunk", chunk_name, "took", round(as.numeric(elapsed_time), 2), "seconds to execute.\n"))
+}
+
+track_execution_time("data import_timed")
+
+plan(multicore(workers = 4))
+json <- fromJSON(data_link)
 ```
 
 ```{r}
@@ -60,14 +81,11 @@ print(filtered_json)
 
 ```{r}
 
-json$acceptance_delay <- json$accepted - json$received
-
-json$publication_delay <- json$pubmed - json$accepted
-
-filtered_json$acceptance_delay <- filtered_json$accepted - filtered_json$received
-
-filtered_json$publication_delay <- filtered_json$pubmed - filtered_json$accepted
-
+filtered_json = filtered_json |>
+  mutate(
+    publication_delay = pubmed - accepted,
+    acceptance_delay = accepted - received
+  )
 
 ```
 
@@ -75,59 +93,157 @@ filtered_json$publication_delay <- filtered_json$pubmed - filtered_json$accepted
 
 filtered_json$issn <- gsub("-", "", filtered_json$issn_linking)
 
-jr2022$issn = jr2022$Issn
+filtered_json$issn <- trimws(filtered_json$issn)
 
+
+
+jr2022$issn = jr2022$Issn
 
 jr2022 <- jr2022[, !(names(jr2022) %in% c("Issn"))]
 
+jr2022_sep <- jr2022 %>%
+  separate(issn, into = c("issn1", "issn2"), sep = ", ", remove = FALSE)
 
+jr2022_sep$issn1 <- trimws(jr2022_sep$issn1)
+
+jr2022_sep$issn2 <- trimws(jr2022_sep$issn2)
 ```
 
 ```{r}
-filtered_json$issn <- trimws(filtered_json$issn)
-jr2022$issn <- trimws(jr2022$issn)
-
-
-merged_delay <- merge(filtered_json, jr2022, by.y = "issn", all.x = TRUE)
+merged_delay <- filtered_json %>%
+  left_join(jr2022_sep, by = c("issn" = "issn1")) %>%
+  left_join(jr2022_sep, by = c("issn" = "issn2")) %>%
+  mutate(issn_matched = coalesce(issn1, issn2)) |> 
+  select(title:Areas_5.x)
 
 merged_delay |> 
-  filter(is.na(SJR)) |> 
+  filter(is.na(SJR.x)) |> 
   group_by(issn) |> 
   count(issn, sort = TRUE)
 
 
-missing <- merged_delay |> 
-  filter(is.na(SJR)) |> 
-  group_by(issn) |> 
-  count(issn)
-
 not_missing <- merged_delay |> 
-  filter(!is.na(SJR))
+  filter(!is.na(SJR.x))
 ```
 
 ```{r}
 everything_filtered <- not_missing |> 
-  filter(publication_delay > 0 | acceptance_delay > 0)
+  filter(publication_delay > 1 | acceptance_delay > 1)
 ```
 
 ```{r}
-covid_pattern <- c("COVID", "covid", "Covid")
+covid_pattern <- c("COVID", "covid", "Covid", "COVID-19", "coronavirus", "SARS", "2019-nCoV")
 
 covid_articles <- str_detect(everything_filtered$title, paste(covid_pattern, collapse = "|")) |
           str_detect(everything_filtered$keywords, paste(covid_pattern, collapse = "|"))
 
 covid_articles_df <- everything_filtered[covid_articles, ]
 
+covid_articles_df <- covid_articles_df |> 
+  filter(year > 2019)
+
 ```
 
 ```{r}
-mean_data <- everything_filtered |> 
-  group_by(year) |> 
-  summarize(mean_value = mean(publication_delay, na.rm = TRUE))
+replication_pattern <- c("replication study", "Replication Study", "replication report", "registered replication report", "Registered replication report", "replication of", "Replication of", "Registered Replication Report")
 
+replication_articles <- str_detect(everything_filtered$title, paste(replication_pattern, collapse = "|")) |
+          str_detect(everything_filtered$keywords, paste(replication_pattern, collapse = "|"))
 
-ggplot(mean_data,
-       aes(x = year, y = mean_value)) +
-       geom_col()
-
+replication_articles_df <- everything_filtered[replication_articles, ]
 ```
+
+```{r}
+acceptance_plot <- ggplot(everything_filtered, aes(x = year, y = acceptance_delay, group = 1)) +
+  geom_smooth(method = "loess", se = TRUE, span = 1) +
+  labs(y = "Acceptance delay (days)", x = "Year") +
+  theme_bw()
+
+
+print(acceptance_plot)
+  
+file.path("acceptance_plot.png") |> 
+  ggsave(acceptance_plot, width = 10, height = 10)
+```
+
+```{r}
+publication_plot <- ggplot(everything_filtered, aes(x = year, y = publication_delay, group = 1)) +
+  geom_smooth(method = "loess", se = TRUE, span = 1) +
+  labs(y = "Publication delay (days)", x = "Year") +
+  theme_bw()
+
+
+print(publication_plot)
+  
+file.path("publication_plot.png") |> 
+  ggsave(publication_plot, width = 10, height = 10)
+```
+
+```{r}
+
+covid_acceptance_plot <- ggplot(everything_filtered, aes(x = year, y = acceptance_delay, group = 1)) +
+  geom_smooth(method = "loess", se = TRUE, span = 1) +
+  geom_point(data = covid_articles_df, aes(x = year, y = acceptance_delay), color = "red") +
+  geom_smooth(data = covid_articles_df, method = "loess", se = TRUE, span = 1, color = "red") +
+  labs(y = "Acceptance delay (days)", x = "Year") +
+  theme_bw()
+
+print(covid_acceptance_plot)
+
+  
+file.path("covid_acceptance_plot.png") |> 
+  ggsave(acceptance_plot, width = 10, height = 10)
+```
+
+```{r}
+covid_publication_plot <- ggplot(everything_filtered, aes(x = year, y = publication_delay, group = 1)) +
+  geom_smooth(method = "loess", se = TRUE, span = 1) +
+  geom_point(data = covid_articles_df, aes(x = year, y = publication_delay), color = "red") +
+  geom_smooth(data = covid_articles_df, method = "loess", se = TRUE, span = 1, color = "red") +
+  labs(y = "Publication delay (days)", x = "Year") +
+  theme_bw()
+
+print(covid_publication_plot)
+
+  
+file.path("covid_publication_plot.png") |> 
+  ggsave(acceptance_plot, width = 10, height = 10)
+```
+
+```{r}
+unique_disciplines <- everything_filtered %>%
+  select(starts_with("Areas_")) %>%
+  unlist() %>%
+  na.omit() %>%
+  unique()
+
+print(unique_disciplines)
+
+
+discipline_types <- everything_filtered %>%
+  pivot_longer(cols = starts_with("Areas_"), names_to = "Area", values_to = "discipline") %>%
+  mutate(discipline = str_trim(discipline)) %>%
+  group_by(discipline) %>%
+  summarize(counts = n()) %>%
+  arrange(desc(counts)) %>%
+  mutate(area_counts = rowSums(across(starts_with("Areas_"), ~ !is.na(.)))) %>%
+  select(discipline, counts)
+
+
+print(discipline_types[1])
+
+
+
+discipline_types$discipline_1 <- case_when(
+  discipline_types$discipline %in% c("Medicine", "Pharmacology, Toxicology and Pharmaceutics", "Health Professions", "Nursing", "Dentistry", "Veterinary") ~ "Medical Sciences",
+  discipline_types$discipline %in% c("Biochemistry", "Biochemistry, Genetics and Molecular Biology", "Agricultural and Biological Sciences", "Immunology and Microbiology", "Environmental Science", "Neuroscience") ~ "Life Sciences",
+  discipline_types$discipline %in% c("Physics and Astronomy", "Chemistry", "Materials Science", "Earth and Planetary Sciences") ~ "Physical Sciences",
+  discipline_types$discipline %in% c("Engineering", "Chemical Engineering", "Energy", "Computer Science") ~ "Engineering and Technology",
+  discipline_types$discipline %in% c("Social Sciences", "Arts and Humanities", "Business, Management and Accounting", "Decision Sciences", "Economics, Econometrics and Finance", "Psychology") ~ "Social Sciences",
+  discipline_types$discipline %in% c("Mathematics", "Computer Science") ~ "Mathematics and Computational Sciences",
+  TRUE ~ "Other"
+)
+```
+
+
+
