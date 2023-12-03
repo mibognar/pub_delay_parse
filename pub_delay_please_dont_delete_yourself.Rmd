@@ -10,6 +10,8 @@ library(tidyverse)
 library(jsonlite)
 library(future.apply)
 library(progress)
+library(grDevices)
+library(papaja)
 ```
 
 ```{r data import}
@@ -20,6 +22,8 @@ jr_link <- "scimagojr 2022.csv"
 
 jr2022 <- read.csv(jr_link)
 
+jr2022 <- jr2022 |> 
+  select(-Publisher, -Region, -Sourceid, -Cites...Doc...2years., -Total.Docs., -Total.Docs...3years., -Total.Refs., -Ref....Doc., -Citable.Docs...3years.)
 ```
 
 ```{r data import_timed}
@@ -45,7 +49,7 @@ json$year <- sub(".*(\\d{4}).*", "\\1", json$pubdate)
 
 ```
 
-```{r}
+```{r Create Dates}
 
 json$received <- as.Date(json$history$received, format = "%Y-%m-%d")
 
@@ -68,7 +72,7 @@ pub_types <- json %>%
 
 ```
 
-```{r}
+```{r Publication type filter}
 filters <- c("D003160:Comparative Study", "D016428:Journal Article", "D002363:Case Reports", "D017418:Meta-Analysis")
 
 filtered_publication_type <- str_detect(json$publication_types, paste(filters, collapse = "|"))
@@ -79,7 +83,7 @@ print(filtered_json)
 
 ```
 
-```{r}
+```{r Create delays}
 
 filtered_json = filtered_json |>
   mutate(
@@ -107,9 +111,11 @@ jr2022_sep <- jr2022 %>%
 jr2022_sep$issn1 <- trimws(jr2022_sep$issn1)
 
 jr2022_sep$issn2 <- trimws(jr2022_sep$issn2)
+
+
 ```
 
-```{r}
+```{r Unimportant journals filter}
 merged_delay <- filtered_json %>%
   left_join(jr2022_sep, by = c("issn" = "issn1")) %>%
   left_join(jr2022_sep, by = c("issn" = "issn2")) %>%
@@ -126,12 +132,14 @@ not_missing <- merged_delay |>
   filter(!is.na(SJR.x))
 ```
 
-```{r}
+```{r Invalid delays filter}
 everything_filtered <- not_missing |> 
-  filter(publication_delay > 1 | acceptance_delay > 1)
+  filter(publication_delay > 1 & acceptance_delay > 1)
+
+everything_filtered$pubdate <- as.Date(everything_filtered$pubdate, format = "%Y-%m-%d")
 ```
 
-```{r}
+```{r Covid pattern}
 covid_pattern <- c("COVID", "covid", "Covid", "COVID-19", "coronavirus", "SARS", "2019-nCoV")
 
 covid_articles <- str_detect(everything_filtered$title, paste(covid_pattern, collapse = "|")) |
@@ -144,7 +152,7 @@ covid_articles_df <- covid_articles_df |>
 
 ```
 
-```{r}
+```{r Replication pattern}
 replication_pattern <- c("replication study", "Replication Study", "replication report", "registered replication report", "Registered replication report", "replication of", "Replication of", "Registered Replication Report")
 
 replication_articles <- str_detect(everything_filtered$title, paste(replication_pattern, collapse = "|")) |
@@ -153,64 +161,88 @@ replication_articles <- str_detect(everything_filtered$title, paste(replication_
 replication_articles_df <- everything_filtered[replication_articles, ]
 ```
 
-```{r}
-acceptance_plot <- ggplot(everything_filtered, aes(x = year, y = acceptance_delay, group = 1)) +
-  geom_smooth(method = "loess", se = TRUE, span = 1) +
+```{r Font}
+windowsFonts(Times = windowsFont("Times New Roman"))
+```
+
+
+```{r Acceptance plot}
+acceptance_plot <- ggplot(everything_filtered, aes(x = pubdate, y = acceptance_delay, group = 1)) +
+  geom_smooth(method = "loess", se = TRUE, span = 1, color = "black", linewidth = 1.2) +
+  geom_point(alpha = 1/ 20) +
   labs(y = "Acceptance delay (days)", x = "Year") +
-  theme_bw()
+  theme_apa() +
+  theme(axis.text.x = element_text(size = 16, family = "Times", hjust = 1),
+        axis.text.y = element_text(size = 16, family = "Times"),
+        axis.title = element_text(size = 22, family = "Times")) +
+  ylim(0, 200)
+
 
 
 print(acceptance_plot)
   
 file.path("acceptance_plot.png") |> 
-  ggsave(acceptance_plot, width = 10, height = 10)
+  ggsave(acceptance_plot, width = 7, height = 7, scale = 0.9)
 ```
 
-```{r}
-publication_plot <- ggplot(everything_filtered, aes(x = year, y = publication_delay, group = 1)) +
-  geom_smooth(method = "loess", se = TRUE, span = 1) +
+```{r Publication plot}
+publication_plot <- ggplot(everything_filtered, aes(x = pubdate, y = publication_delay, group = 1)) +
+  geom_smooth(method = "loess", se = TRUE, span = 1, color = "black", linewidth = 1.2) +
+  geom_point(alpha = 1/ 20) +
   labs(y = "Publication delay (days)", x = "Year") +
-  theme_bw()
+  theme_apa() +
+  theme(axis.text.x = element_text(size = 16, family = "Times", hjust = 1), 
+        axis.text.y = element_text(size = 16, family = "Times"),
+        axis.title = element_text(size = 22, family = "Times")) +
+  ylim(0, 100)
 
 
 print(publication_plot)
   
 file.path("publication_plot.png") |> 
-  ggsave(publication_plot, width = 10, height = 10)
+  ggsave(publication_plot, width = 8, height = 8, scale = 0.9)
 ```
 
-```{r}
+```{r Covid acceptance plot}
 
-covid_acceptance_plot <- ggplot(everything_filtered, aes(x = year, y = acceptance_delay, group = 1)) +
-  geom_smooth(method = "loess", se = TRUE, span = 1) +
+covid_acceptance_plot <- ggplot(everything_filtered, aes(x = pubdate, y = acceptance_delay, group = 1)) +
+  geom_smooth(method = "loess", se = TRUE, span = 1, color = "black", linewidth = 1.2) +
   geom_point(data = covid_articles_df, aes(x = year, y = acceptance_delay), color = "red") +
   geom_smooth(data = covid_articles_df, method = "loess", se = TRUE, span = 1, color = "red") +
   labs(y = "Acceptance delay (days)", x = "Year") +
-  theme_bw()
+  theme_apa() +
+  theme(axis.text.x = element_text(size = 16, family = "Times", hjust = 1), 
+        axis.text.y = element_text(size = 16, family = "Times"),
+        axis.title = element_text(size = 22, family = "Times")) +
+  ylim(0, 200)
 
 print(covid_acceptance_plot)
 
   
 file.path("covid_acceptance_plot.png") |> 
-  ggsave(acceptance_plot, width = 10, height = 10)
+  ggsave(acceptance_plot, width = 8, height = 8, scale = 0.9)
 ```
 
-```{r}
-covid_publication_plot <- ggplot(everything_filtered, aes(x = year, y = publication_delay, group = 1)) +
-  geom_smooth(method = "loess", se = TRUE, span = 1) +
+```{r Covid publication plot}
+covid_publication_plot <- ggplot(everything_filtered, aes(x = pubdate, y = publication_delay, group = 1)) +
+  geom_smooth(method = "loess", se = TRUE, span = 1, color = "black", linewidth = 1.2) +
   geom_point(data = covid_articles_df, aes(x = year, y = publication_delay), color = "red") +
   geom_smooth(data = covid_articles_df, method = "loess", se = TRUE, span = 1, color = "red") +
   labs(y = "Publication delay (days)", x = "Year") +
-  theme_bw()
+  theme_apa() +
+  theme(axis.text.x = element_text(size = 16, family = "Times", hjust = 1), 
+        axis.text.y = element_text(size = 16, family = "Times"),
+        axis.title = element_text(size = 22, family = "Times")) +
+  ylim(0, 100)
 
 print(covid_publication_plot)
 
   
 file.path("covid_publication_plot.png") |> 
-  ggsave(acceptance_plot, width = 10, height = 10)
+  ggsave(acceptance_plot, width = 8, height = 8, scale = 0.9)
 ```
 
-```{r}
+```{r Discipline grouping}
 unique_disciplines <- everything_filtered %>%
   select(starts_with("Areas_")) %>%
   unlist() %>%
@@ -245,5 +277,62 @@ discipline_types$discipline_1 <- case_when(
 )
 ```
 
+```{r}
+everything_filtered$Areas_2.x <- everything_filtered$Areas_2.x %>% trimws()
+everything_filtered$Areas_3.x <- everything_filtered$Areas_3.x %>% trimws()
+everything_filtered$Areas_4.x <- everything_filtered$Areas_4.x %>% trimws()
+everything_filtered$Areas_5.x <- everything_filtered$Areas_5.x %>% trimws()
 
+
+everything_filtered <- everything_filtered %>%
+  mutate(
+    discipline1 = case_when(
+      Areas_1.x %in% c("Medicine", "Pharmacology, Toxicology and Pharmaceutics", "Health Professions", "Nursing", "Dentistry", "Veterinary") ~ "Medical Sciences",
+      Areas_1.x %in% c("Biochemistry", "Biochemistry, Genetics and Molecular Biology", "Agricultural and Biological Sciences", "Immunology and Microbiology", "Environmental Science", "Neuroscience") ~ "Life Sciences",
+      Areas_1.x %in% c("Physics and Astronomy", "Chemistry", "Materials Science", "Earth and Planetary Sciences") ~ "Physical Sciences",
+      Areas_1.x %in% c("Engineering", "Chemical Engineering", "Energy", "Computer Science") ~ "Engineering and Technology",
+      Areas_1.x %in% c("Social Sciences", "Arts and Humanities", "Business, Management and Accounting", "Decision Sciences", "Economics, Econometrics and Finance", "Psychology") ~ "Social Sciences",
+      Areas_1.x %in% c("Mathematics", "Computer Science") ~ "Mathematics and Computational Sciences",
+      TRUE ~ "Other"
+    ),
+     discipline2 = case_when(
+      Areas_2.x %in% c("Medicine", "Pharmacology, Toxicology and Pharmaceutics", "Health Professions", "Nursing", "Dentistry", "Veterinary") ~ "Medical Sciences",
+      Areas_2.x %in% c("Biochemistry", "Biochemistry, Genetics and Molecular Biology", "Agricultural and Biological Sciences", "Immunology and Microbiology", "Environmental Science", "Neuroscience") ~ "Life Sciences",
+      Areas_2.x %in% c("Physics and Astronomy", "Chemistry", "Materials Science", "Earth and Planetary Sciences") ~ "Physical Sciences",
+      Areas_2.x %in% c("Engineering", "Chemical Engineering", "Energy", "Computer Science") ~ "Engineering and Technology",
+      Areas_2.x %in% c("Social Sciences", "Arts and Humanities", "Business, Management and Accounting", "Decision Sciences", "Economics, Econometrics and Finance", "Psychology") ~ "Social Sciences",
+      Areas_2.x %in% c("Mathematics", "Computer Science") ~ "Mathematics and Computational Sciences",
+      TRUE ~ "Other"
+     ),
+     discipline3 = case_when(
+      Areas_3.x %in% c("Medicine", "Pharmacology, Toxicology and Pharmaceutics", "Health Professions", "Nursing", "Dentistry", "Veterinary") ~ "Medical Sciences",
+      Areas_3.x %in% c("Biochemistry", "Biochemistry, Genetics and Molecular Biology", "Agricultural and Biological Sciences", "Immunology and Microbiology", "Environmental Science", "Neuroscience") ~ "Life Sciences",
+      Areas_3.x %in% c("Physics and Astronomy", "Chemistry", "Materials Science", "Earth and Planetary Sciences") ~ "Physical Sciences",
+      Areas_3.x %in% c("Engineering", "Chemical Engineering", "Energy", "Computer Science") ~ "Engineering and Technology",
+      Areas_3.x %in% c("Social Sciences", "Arts and Humanities", "Business, Management and Accounting", "Decision Sciences", "Economics, Econometrics and Finance", "Psychology") ~ "Social Sciences",
+      Areas_3.x %in% c("Mathematics", "Computer Science") ~ "Mathematics and Computational Sciences",
+      TRUE ~ "Other"
+     ),
+     discipline4 = case_when(
+      Areas_4.x %in% c("Medicine", "Pharmacology, Toxicology and Pharmaceutics", "Health Professions", "Nursing", "Dentistry", "Veterinary") ~ "Medical Sciences",
+      Areas_4.x %in% c("Biochemistry", "Biochemistry, Genetics and Molecular Biology", "Agricultural and Biological Sciences", "Immunology and Microbiology", "Environmental Science", "Neuroscience") ~ "Life Sciences",
+      Areas_4.x %in% c("Physics and Astronomy", "Chemistry", "Materials Science", "Earth and Planetary Sciences") ~ "Physical Sciences",
+      Areas_4.x %in% c("Engineering", "Chemical Engineering", "Energy", "Computer Science") ~ "Engineering and Technology",
+      Areas_4.x %in% c("Social Sciences", "Arts and Humanities", "Business, Management and Accounting", "Decision Sciences", "Economics, Econometrics and Finance", "Psychology") ~ "Social Sciences",
+      Areas_4.x %in% c("Mathematics", "Computer Science") ~ "Mathematics and Computational Sciences",
+      TRUE ~ "Other"
+     ),
+     discipline5 = case_when(
+      Areas_5.x %in% c("Medicine", "Pharmacology, Toxicology and Pharmaceutics", "Health Professions", "Nursing", "Dentistry", "Veterinary") ~ "Medical Sciences",
+      Areas_5.x %in% c("Biochemistry", "Biochemistry, Genetics and Molecular Biology", "Agricultural and Biological Sciences", "Immunology and Microbiology", "Environmental Science", "Neuroscience") ~ "Life Sciences",
+      Areas_5.x %in% c("Physics and Astronomy", "Chemistry", "Materials Science", "Earth and Planetary Sciences") ~ "Physical Sciences",
+      Areas_5.x %in% c("Engineering", "Chemical Engineering", "Energy", "Computer Science") ~ "Engineering and Technology",
+      Areas_5.x %in% c("Social Sciences", "Arts and Humanities", "Business, Management and Accounting", "Decision Sciences", "Economics, Econometrics and Finance", "Psychology") ~ "Social Sciences",
+      Areas_5.x %in% c("Mathematics", "Computer Science") ~ "Mathematics and Computational Sciences",
+      TRUE ~ "Other"
+     )
+  )
+   
+
+```
 
