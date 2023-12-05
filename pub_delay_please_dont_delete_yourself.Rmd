@@ -339,7 +339,63 @@ everything_filtered <- everything_filtered %>%
      ) 
   ) |> 
   select(-Areas_1.x, -Areas_2.x, -Areas_3.x, -Areas_4.x, -Areas_5.x)
-   
 
+
+```
+
+
+```{r}
+medical_science_articles <- everything_filtered |> 
+  filter(discipline1 == "Medical Sciences" | discipline2 == "Medical Sciences" | discipline3 == "Medical Sciences" | discipline4 == "Medical Sciences" | discipline5 == "Medical Sciences") |>
+  mutate(
+    discipline = "medical_science"
+  ) |> 
+  select(-discipline1, -discipline2, -discipline3, -discipline4, -discipline5, acceptance_delay, publication_delay, year, pubdate, discipline)
+
+
+life_science_articles <- everything_filtered |>
+  filter(discipline1 == "Life Sciences" | discipline2 == "Life Sciences" | discipline3 == "Life Sciences" | discipline4 == "Life Sciences" | discipline5 == "Life Sciences") |> 
+  mutate(
+    discipline = "life_science"
+  ) |> 
+  select(-discipline1, -discipline2, -discipline3, -discipline4, -discipline5, acceptance_delay, publication_delay, year, pubdate, discipline)
+
+physical_science_articles <- everything_filtered |>
+  filter(discipline1 == "Physical Sciences" | discipline2 == "Physical Sciences" | discipline3 == "Physical Sciences" | discipline4 == "Physical Sciences" | discipline5 == "Physical Sciences") |> 
+  mutate(
+    discipline = "physical_science"
+  ) |> 
+  select(-discipline1, -discipline2, -discipline3, -discipline4, -discipline5, acceptance_delay, publication_delay, year, pubdate, discipline)
+
+engineering_and_technology_articles <- everything_filtered |>
+  filter(discipline1 == "Engineering and Technology" | discipline2 == "Engineering and Technology" | discipline3 == "Engineering and Technology" | discipline4 == "Engineering and Technology" | discipline5 == "Engineering and Technology") |> 
+  mutate(
+    discipline = "engineering_and_technology"
+  ) |> 
+  select(-discipline1, -discipline2, -discipline3, -discipline4, -discipline5, acceptance_delay, publication_delay, year, pubdate, discipline)
+
+social_science_articles <- everything_filtered |>
+  filter(discipline1 == "Social Sciences" | discipline2 == "Social Sciences" | discipline3 == "Social Sciences" | discipline4 == "Social Sciences" | discipline5 == "Social Sciences") |> 
+  mutate(
+    discipline = "social_science"
+  ) |> 
+  select(-discipline1, -discipline2, -discipline3, -discipline4, -discipline5, acceptance_delay, publication_delay, year, pubdate, discipline)
+
+
+
+discipline_combined <- rbind(medical_science_articles, life_science_articles, physical_science_articles, engineering_and_technology_articles, social_science_articles)
+  
+
+plot <- discipline_combined |> 
+  ggplot(aes(x = pubdate, y = acceptance_delay, group = discipline, color = discipline)) +
+  geom_smooth(se = FALSE)
+
+
+print(plot)
+
+
+```
+
+```{r}
 ```
 
